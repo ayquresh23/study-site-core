@@ -42,7 +42,11 @@
         const cls = 'concept-box' + (b.variant ? ` ${b.variant}` : '');
         let titleHtml = '';
         if (b.titleLearn || b.titleRevise) {
-          titleHtml = `${b.titleRevise ? `<div class="concept-box-title revise-only">${esc(b.titleRevise)}</div>` : ''}${b.titleLearn ? `<div class="concept-box-title learn-only">${esc(b.titleLearn)}</div>` : ''}`;
+          // A newline between these two divs (matching the source markup's
+          // own formatting) keeps their text from visually/textually
+          // running together -- purely cosmetic since both are
+          // block-level, but avoids "SHEETQuick"-style word-merging.
+          titleHtml = `${b.titleRevise ? `<div class="concept-box-title revise-only">${esc(b.titleRevise)}</div>\n` : ''}${b.titleLearn ? `<div class="concept-box-title learn-only">${esc(b.titleLearn)}</div>` : ''}`;
         } else if (b.title) {
           titleHtml = `<div class="concept-box-title">${esc(b.title)}</div>`;
         }
