@@ -346,3 +346,40 @@ body.revise-mode .mode-btn[data-mode="revise"].active{background:var(--amber);co
   h1,h2{color:#111}
   .concept-box{border:1px solid #ccc;background:#f9f9f9}
 }
+
+/* ── SUBPAGES: one page per section, dot pager ── */
+.section.paged .subpage{display:none}
+.section.paged .subpage.active{display:block;animation:fadeIn 0.2s ease}
+body.revise-mode .section.paged .subpage{display:block}
+.section.paged .container,.section.paged .container-wide{padding-bottom:130px}
+.subpage [id]{scroll-margin-top:88px}
+.sub-foot{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:48px;padding-top:22px;border-top:1px solid var(--border)}
+.sub-foot .topic-nav-btn{max-width:48%;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sub-foot .sub-next{margin-left:auto;text-align:right;border-color:var(--accent);color:var(--accent)}
+.sub-foot .sub-next:hover{background:var(--accent-soft,rgba(255,255,255,0.05))}
+body.revise-mode .sub-foot{display:none}
+
+.subpager{position:fixed;left:50%;bottom:16px;z-index:900;transform:translate(-50%,24px);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;display:flex;flex-direction:column;align-items:center;gap:5px;padding:8px 14px 9px;background:rgba(19,19,24,0.92);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border:1px solid var(--border);border-radius:22px;box-shadow:0 6px 24px rgba(0,0,0,0.45);max-width:calc(100vw - 20px)}
+.subpager.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+body.revise-mode .subpager{display:none}
+.subpager-label{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.3px;color:var(--text-2);max-width:min(520px,calc(100vw - 70px));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.subpager-count{color:var(--accent);font-weight:600;margin-right:8px}
+.subpager-row{display:flex;align-items:center;gap:4px}
+.subpager-dots{display:flex;align-items:center;gap:8px;padding:0 4px}
+.subpager-dots.dense{gap:5px}
+.subdot{position:relative;width:10px;height:10px;padding:0;border-radius:50%;border:1.5px solid var(--dim);background:transparent;cursor:pointer;transition:width .2s,background .2s,border-color .2s,transform .15s}
+.subdot::after{content:'';position:absolute;inset:-8px -4px}
+.subdot.visited{border-color:var(--accent);background:var(--accent);opacity:.45}
+.subdot:hover{border-color:var(--accent);transform:scale(1.25)}
+.subdot.active{width:26px;border-radius:6px;border-color:var(--accent);background:var(--accent);opacity:1;transform:none}
+.subpager-dots.dense .subdot.active{width:20px}
+.subpager-arrow{width:30px;height:30px;padding:0 0 2px;border:0;border-radius:50%;background:none;color:var(--text-2);font-size:20px;line-height:1;cursor:pointer;transition:color .15s,background .15s}
+.subpager-arrow:hover:not(:disabled){color:var(--accent);background:var(--surface)}
+.subpager-arrow:disabled{opacity:.22;cursor:default}
+@media(max-width:768px){
+  .subpager{bottom:10px;padding:7px 10px 8px}
+  .subpager-dots{gap:6px}
+  .sub-foot{flex-direction:column-reverse;align-items:stretch}
+  .sub-foot .topic-nav-btn{max-width:none;text-align:center}
+}
+@media print{.subpager,.sub-foot{display:none}.section.paged .subpage{display:block}}

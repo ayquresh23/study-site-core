@@ -40,3 +40,7 @@ content-loss check (`tools/verify.js` in this migration's working set — not
 committed here) that renders both the original and the new JSON-driven page
 in jsdom and diffs their visible text token-for-token, so nothing was lost
 silently in the conversion.
+
+## Subpages
+
+Every topic is automatically split into one page per `h2` heading. A dot pager (in the site's accent colour) sits at the bottom of the screen, with previous/next arrows, a "3 / 9" counter and the page title. Anything before the first `h2` becomes an "Overview" page. Revise mode shows every page at once and hides the pager. Arrow keys step through pages, then on to the next section. URLs look like `#t2/3`, and links to any element id inside a topic (contents lists, cross references) open the right page. Set `subpages: false` in `SITE_CONFIG` to turn it off for a site.

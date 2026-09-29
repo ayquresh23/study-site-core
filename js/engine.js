@@ -10,7 +10,8 @@
      topicIds: ['t1','t2',...],              // content topics, in order (excludes home/formulas/glossary/traps/etc.)
      navOrder: ['home','t1',...,'traps'],    // full arrow-key nav order (all sections)
      topicColors: {t1:'#f7a84a', ...},
-     topicLabels: {t1:'Stress & Strain', ...}
+     topicLabels: {t1:'Stress & Strain', ...},
+     subpages: false                         // optional. Topics are split into one page per h2 (dot pager) unless this is false
    }
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
@@ -22,28 +23,35 @@
   // ── SECTION NAVIGATION ──────────────────────
   const NAV_ITEM_SEL = '[data-section]';
 
-  window.showSection = function (id, e) {
-    if (e) e.preventDefault();
+  // A topic's page can be addressed as "#id" (first page) or "#id/3" (third page).
+  function hashFor(id, page) { return page > 0 && SUB[id] ? `#${id}/${page + 1}` : `#${id}`; }
+
+  function activate(id, page) {
     document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
     document.querySelectorAll(NAV_ITEM_SEL).forEach(t => t.classList.remove('active'));
     const section = document.getElementById(id);
-    if (section) { section.classList.add('active'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+    if (section) section.classList.add('active');
     const tab = document.querySelector(`[data-section="${id}"]`);
     if (tab) tab.classList.add('active');
-    history.pushState({ section: id }, '', `#${id}`);
+    if (section && SUB[id]) setSubpage(id, page === 'last' ? SUB[id].pages.length - 1 : (page || 0));
+    updatePager();
+    return section;
+  }
+
+  window.showSection = function (id, e, page) {
+    if (e) e.preventDefault();
+    const section = activate(id, page);
+    if (section) window.scrollTo({ top: 0, behavior: 'smooth' });
+    const idx = SUB[id] ? SUB[id].idx : 0;
+    history.pushState({ section: id, page: idx }, '', hashFor(id, idx));
     markVisited(id);
   };
 
   window.addEventListener('popstate', e => {
-    const id = (e.state && e.state.section) || location.hash.slice(1) || 'home';
-    const el = document.getElementById(id);
-    if (el) {
-      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-      document.querySelectorAll(NAV_ITEM_SEL).forEach(t => t.classList.remove('active'));
-      el.classList.add('active');
-      const tab = document.querySelector(`[data-section="${id}"]`);
-      if (tab) tab.classList.add('active');
-    }
+    const st = e.state;
+    if (st && st.section) { if (document.getElementById(st.section)) activate(st.section, st.page || 0); return; }
+    const t = parseHash(location.hash.slice(1)) || { id: 'home', page: 0 };
+    if (document.getElementById(t.id)) activate(t.id, t.page);
   });
 
   // ── LEARN / REVISE MODE ──────────────────────
@@ -361,11 +369,17 @@
     if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
       const active = document.querySelector('.section.active');
       if (!active) return;
+      const dir = e.key === 'ArrowRight' ? 1 : -1;
+      const st = SUB[active.id];
+      if (st && !document.body.classList.contains('revise-mode')) {
+        const to = st.idx + dir;
+        if (to >= 0 && to < st.pages.length) { showSubpage(active.id, to); return; }
+      }
       const navOrder = CFG.navOrder || [];
       const idx = navOrder.indexOf(active.id);
       if (idx === -1) return;
-      const next = e.key === 'ArrowRight' ? navOrder[idx + 1] : navOrder[idx - 1];
-      if (next) showSection(next);
+      const next = navOrder[idx + dir];
+      if (next) showSection(next, null, dir < 0 ? 'last' : 0);
     }
 
     if (e.key === 'Escape') {
@@ -384,6 +398,189 @@
       section.insertBefore(strip, section.firstChild);
     });
   }
+
+  // ── SUBPAGES (one page per h2, dot pager) ────
+  const SUB = {};   // topic id -> { pages: [{el, title}], idx }
+  let pagerEl = null;
+
+  function visitedKey(id) { return `${SLUG}-sub-${id}`; }
+  function getVisited(id) {
+    try { return JSON.parse(localStorage.getItem(visitedKey(id)) || '[]'); } catch (e) { return []; }
+  }
+  function addVisited(id, i) {
+    try {
+      const v = getVisited(id);
+      if (!v.includes(i)) { v.push(i); localStorage.setItem(visitedKey(id), JSON.stringify(v)); }
+    } catch (e) { /* storage unavailable: dots just won't remember */ }
+  }
+
+  function buildSubpages() {
+    if (CFG.subpages === false) return;
+    (CFG.topicIds || []).forEach(id => {
+      const section = document.getElementById(id);
+      const container = section && (section.querySelector('.container') || section.querySelector('.container-wide'));
+      if (!container) return;
+
+      const kids = [...container.children];
+      const isHead = k => k.classList.contains('topic-num') || k.tagName === 'H1';
+      let first = 0;
+      while (first < kids.length && isHead(kids[first])) first++;
+      const body = kids.slice(first);
+      const topicNav = body.find(k => k.classList.contains('topic-nav'));
+      const content = body.filter(k => k !== topicNav);
+
+      // split at every top-level h2
+      const groups = [];
+      let cur = { title: 'Overview', nodes: [] };
+      content.forEach(k => {
+        if (k.tagName === 'H2') { groups.push(cur); cur = { title: k.textContent.trim() || 'Section', nodes: [k] }; }
+        else cur.nodes.push(k);
+      });
+      groups.push(cur);
+      // the lead group is only a real "Overview" page if it holds more than the subtitle
+      const lead = groups[0];
+      const hasLead = lead.nodes.some(n => !n.classList.contains('hero-subtitle'));
+      if (!hasLead) {
+        groups.shift();
+        if (groups.length) groups[0].nodes = lead.nodes.concat(groups[0].nodes);
+      }
+      if (groups.length < 2) return;   // nothing worth splitting
+
+      const pages = groups.map((g, i) => {
+        const el = document.createElement('div');
+        el.className = 'subpage';
+        el.dataset.page = i;
+        g.nodes.forEach(n => el.appendChild(n));
+        return { el, title: g.title };
+      });
+      const anchor = topicNav || null;
+      pages.forEach(pg => container.insertBefore(pg.el, anchor));
+      if (topicNav) pages[pages.length - 1].el.appendChild(topicNav);
+
+      // inline "previous / next" at the foot of every page except the last
+      pages.forEach((pg, i) => {
+        if (i === pages.length - 1) return;
+        const foot = document.createElement('div');
+        foot.className = 'sub-foot';
+        foot.innerHTML = (i > 0
+          ? `<button class="topic-nav-btn" data-sub="${i - 1}">← ${escHtml(pages[i - 1].title)}</button>`
+          : '<span></span>') +
+          `<button class="topic-nav-btn sub-next" data-sub="${i + 1}">${escHtml(pages[i + 1].title)} →</button>`;
+        pg.el.appendChild(foot);
+      });
+
+      section.classList.add('paged');
+      SUB[id] = { pages, idx: 0 };
+      pages[0].el.classList.add('active');
+      container.addEventListener('click', ev => {
+        const b = ev.target.closest('[data-sub]');
+        if (b && container.contains(b)) { showSubpage(id, parseInt(b.dataset.sub, 10)); }
+      });
+    });
+  }
+
+  function escHtml(t) { return String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+  // switch page without touching history or scroll
+  function setSubpage(id, idx) {
+    const st = SUB[id];
+    if (!st) return;
+    idx = Math.max(0, Math.min(st.pages.length - 1, idx));
+    st.pages.forEach((p, i) => p.el.classList.toggle('active', i === idx));
+    st.idx = idx;
+    addVisited(id, idx);
+  }
+
+  window.showSubpage = function (id, idx, opts) {
+    opts = opts || {};
+    const st = SUB[id];
+    if (!st) return;
+    setSubpage(id, idx);
+    updatePager();
+    history.pushState({ section: id, page: st.idx }, '', hashFor(id, st.idx));
+    if (opts.scroll !== false) window.scrollTo({ top: 0, behavior: 'auto' });
+  };
+
+  function activeTopicId() {
+    const a = document.querySelector('.section.active');
+    return a && SUB[a.id] ? a.id : null;
+  }
+
+  function buildPager() {
+    pagerEl = document.createElement('nav');
+    pagerEl.className = 'subpager';
+    pagerEl.setAttribute('aria-label', 'Subtopic pages');
+    pagerEl.innerHTML = `
+      <div class="subpager-label"><span class="subpager-count"></span><span class="subpager-title"></span></div>
+      <div class="subpager-row">
+        <button class="subpager-arrow" data-dir="-1" aria-label="Previous page">‹</button>
+        <div class="subpager-dots"></div>
+        <button class="subpager-arrow" data-dir="1" aria-label="Next page">›</button>
+      </div>`;
+    pagerEl.addEventListener('click', ev => {
+      const id = activeTopicId();
+      if (!id) return;
+      const dot = ev.target.closest('.subdot');
+      if (dot) return showSubpage(id, parseInt(dot.dataset.i, 10));
+      const arrow = ev.target.closest('.subpager-arrow');
+      if (arrow) showSubpage(id, SUB[id].idx + parseInt(arrow.dataset.dir, 10));
+    });
+    document.body.appendChild(pagerEl);
+  }
+
+  function updatePager() {
+    if (!pagerEl) return;
+    const id = activeTopicId();
+    pagerEl.classList.toggle('show', !!id);
+    if (!id) return;
+    const st = SUB[id];
+    const visited = getVisited(id);
+    const dots = pagerEl.querySelector('.subpager-dots');
+    if (dots.dataset.topic !== id) {
+      dots.dataset.topic = id;
+      dots.classList.toggle('dense', st.pages.length > 12);
+      dots.innerHTML = st.pages.map((p, i) =>
+        `<button class="subdot" data-i="${i}" title="${escHtml(p.title)}" aria-label="Page ${i + 1}: ${escHtml(p.title)}"></button>`).join('');
+    }
+    dots.querySelectorAll('.subdot').forEach((d, i) => {
+      d.classList.toggle('active', i === st.idx);
+      d.classList.toggle('visited', i !== st.idx && visited.includes(i));
+      if (i === st.idx) d.setAttribute('aria-current', 'page'); else d.removeAttribute('aria-current');
+    });
+    pagerEl.querySelector('.subpager-count').textContent = `${st.idx + 1} / ${st.pages.length}`;
+    pagerEl.querySelector('.subpager-title').textContent = st.pages[st.idx].title;
+    pagerEl.querySelector('[data-dir="-1"]').disabled = st.idx === 0;
+    pagerEl.querySelector('[data-dir="1"]').disabled = st.idx === st.pages.length - 1;
+  }
+
+  // "#id", "#id/3", or the id of any element inside a topic page
+  function parseHash(h) {
+    if (!h) return null;
+    try { h = decodeURIComponent(h); } catch (e) { /* keep raw */ }
+    if (document.getElementById(h) && document.getElementById(h).classList.contains('section')) return { id: h, page: 0 };
+    const m = h.match(/^(.+)\/(\d+)$/);
+    if (m && SUB[m[1]]) return { id: m[1], page: Math.max(0, parseInt(m[2], 10) - 1) };
+    const el = document.getElementById(h);
+    const pg = el && el.closest('.subpage');
+    if (pg) return { id: pg.closest('.section').id, page: parseInt(pg.dataset.page, 10), el };
+    return null;
+  }
+
+  // in-page links (contents lists, cross references) may point at content on another page
+  document.addEventListener('click', ev => {
+    const a = ev.target.closest('a[href^="#"]');
+    if (!a) return;
+    const t = parseHash(a.getAttribute('href').slice(1));
+    if (!t || !t.el) return;
+    ev.preventDefault();
+    if (SUB[t.id]) {
+      if (document.querySelector('.section.active')?.id !== t.id) activate(t.id, t.page); else setSubpage(t.id, t.page);
+      updatePager();
+      history.pushState({ section: t.id, page: t.page }, '', hashFor(t.id, t.page));
+    }
+    if (t.page === 0 && t.el === t.el.closest('.subpage').firstElementChild) window.scrollTo({ top: 0, behavior: 'auto' });
+    else t.el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
 
   // ── PREV / NEXT NAV ──────────────────────────
   function buildTopicNav() {
@@ -417,9 +614,6 @@
     const savedMode = localStorage.getItem(`${SLUG}-mode`) || 'learn';
     setMode(savedMode, true);
 
-    const hash = location.hash.slice(1);
-    if (hash && document.getElementById(hash)) showSection(hash);
-
     if (typeof glossaryData !== 'undefined') {
       buildGlossary('glossary-container');
       initGlossarySearch('glossary-search-input', 'search-results-count', 'no-results');
@@ -427,6 +621,14 @@
     }
     buildTopicNav();
     buildAccentStrips();
+    buildSubpages();
+    buildPager();
+
+    const target = parseHash(location.hash.slice(1));
+    if (target) {
+      showSection(target.id, null, target.page);
+      if (target.el) setTimeout(() => target.el.scrollIntoView({ block: 'start' }), 50);
+    }
     updateProgress();
 
     if (typeof renderMathInElement !== 'undefined') {
