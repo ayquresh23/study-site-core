@@ -371,7 +371,7 @@
       if (!active) return;
       const dir = e.key === 'ArrowRight' ? 1 : -1;
       const st = SUB[active.id];
-      if (st && !document.body.classList.contains('revise-mode')) {
+      if (st && !document.body.classList.contains('revise-mode') && !isSingle()) {
         const to = st.idx + dir;
         if (to >= 0 && to < st.pages.length) { showSubpage(active.id, to); return; }
       }
@@ -402,6 +402,16 @@
   // ── SUBPAGES (one page per h2, dot pager) ────
   const SUB = {};   // topic id -> { pages: [{el, title}], idx }
   let pagerEl = null;
+  let fabEl = null;
+
+  // layout preference: 'pages' (default) or 'single' (the original one long page)
+  window.setLayout = function (mode) {
+    const single = mode === 'single';
+    document.body.classList.toggle('single-page', single);
+    try { localStorage.setItem(`${SLUG}-layout`, single ? 'single' : 'pages'); } catch (e) { /* not persisted */ }
+    updatePager();
+  };
+  function isSingle() { return document.body.classList.contains('single-page'); }
 
   function visitedKey(id) { return `${SLUG}-sub-${id}`; }
   function getVisited(id) {
@@ -511,7 +521,10 @@
     pagerEl.className = 'subpager';
     pagerEl.setAttribute('aria-label', 'Subtopic pages');
     pagerEl.innerHTML = `
-      <div class="subpager-label"><span class="subpager-count"></span><span class="subpager-title"></span></div>
+      <div class="subpager-top">
+        <div class="subpager-label"><span class="subpager-count"></span><span class="subpager-title"></span></div>
+        <button class="subpager-mode" data-act="single" title="Show this topic as one long page">One page</button>
+      </div>
       <div class="subpager-row">
         <button class="subpager-arrow" data-dir="-1" aria-label="Previous page">‹</button>
         <div class="subpager-dots"></div>
@@ -520,18 +533,26 @@
     pagerEl.addEventListener('click', ev => {
       const id = activeTopicId();
       if (!id) return;
+      if (ev.target.closest('[data-act="single"]')) return setLayout('single');
       const dot = ev.target.closest('.subdot');
       if (dot) return showSubpage(id, parseInt(dot.dataset.i, 10));
       const arrow = ev.target.closest('.subpager-arrow');
       if (arrow) showSubpage(id, SUB[id].idx + parseInt(arrow.dataset.dir, 10));
     });
     document.body.appendChild(pagerEl);
+    fabEl = document.createElement('button');
+    fabEl.className = 'layout-fab';
+    fabEl.textContent = 'Split into pages';
+    fabEl.title = 'Show topics one page at a time';
+    fabEl.addEventListener('click', () => setLayout('pages'));
+    document.body.appendChild(fabEl);
   }
 
   function updatePager() {
     if (!pagerEl) return;
     const id = activeTopicId();
-    pagerEl.classList.toggle('show', !!id);
+    pagerEl.classList.toggle('show', !!id && !isSingle());
+    if (fabEl) fabEl.classList.toggle('show', !!id && isSingle());
     if (!id) return;
     const st = SUB[id];
     const visited = getVisited(id);
@@ -623,6 +644,7 @@
     buildAccentStrips();
     buildSubpages();
     buildPager();
+    try { if (localStorage.getItem(`${SLUG}-layout`) === 'single') document.body.classList.add('single-page'); } catch (e) { /* default */ }
 
     const target = parseHash(location.hash.slice(1));
     if (target) {
