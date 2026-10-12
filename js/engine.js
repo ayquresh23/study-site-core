@@ -16,6 +16,15 @@
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 (function () {
+  // terms.js (term previews + expandable glossary) lives next to this file and loads itself in
+  const SELF = document.currentScript && document.currentScript.src;
+  if (SELF) {
+    const t = document.createElement('script');
+    t.src = SELF.replace(/engine(\.min)?\.js(\?.*)?$/, 'terms.js$2');
+    t.defer = true;
+    document.head.appendChild(t);
+  }
+
   const CFG = window.SITE_CONFIG || {};
   const SLUG = CFG.slug || 'site';
   const TOPIC_IDS_RE = new RegExp('^(' + (CFG.topicIds || []).map(id => id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')$');

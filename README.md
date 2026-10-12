@@ -44,3 +44,13 @@ silently in the conversion.
 ## Subpages
 
 Every topic is automatically split into one page per `h2` heading. A dot pager (in the site's accent colour) sits at the bottom of the screen, with previous/next arrows, a "3 / 9" counter and the page title. Anything before the first `h2` becomes an "Overview" page. Revise mode shows every page at once and hides the pager. Arrow keys step through pages, then on to the next section. URLs look like `#t2/3`, and links to any element id inside a topic (contents lists, cross references) open the right page. The pager has a "One page" button that switches to the original single long page (remembered per site in localStorage); a "Split into pages" button brings the pager back. Set `subpages: false` in `SITE_CONFIG` to turn it off for a site.
+
+## Term previews and expandable glossary
+
+`js/terms.js` loads itself from `engine.js` (same folder), so sites need no extra script tag. It reads the site's `glossaryData`:
+
+- **Previews.** The first mention of each glossary term on a page gets a quiet dotted underline. Hovering it (or tapping, or focusing it with the keyboard) opens a small Wikipedia-style card with the definition. Selecting or double-clicking any glossary term, abbreviation or symbol anywhere on the page (including KaTeX maths such as μ or x̄) opens the same card.
+- **Expandable entries.** Clicking a glossary entry (for example a search result) expands it to list where the term appears ("Topic › heading › snippet"). Six are shown at first, with "Show more" up to 30. Clicking one opens that topic page, scrolls to the term and briefly highlights it.
+- **Comparisons (optional, per site).** Define `const glossaryComparisons = [...]` in `glossary-data.js` and the table appears in both views. The schema is in the header of `terms.js`. A comparison term that isn't in the glossary still works, using its entry in `defs`. `aliases` adds extra words that should find a side, e.g. "isotropic" for "Isotropy".
+
+Debug from the console with `__terms.findEntry('σ_y')` or `__terms.entries`.
