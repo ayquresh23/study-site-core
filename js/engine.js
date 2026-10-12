@@ -130,7 +130,7 @@
             item.classList.add('match');
             if (item.dataset.name === q) exactItems.push(item);
           } else {
-            nameEl.innerHTML = nameEl.textContent;
+            nameEl.innerHTML = escHtml(nameEl.textContent);
             item.classList.remove('match');
           }
         }
@@ -165,9 +165,15 @@
     });
   };
 
+  // glossary text is plain text: escape it so names like "<uvw>" or "<a> direction" aren't read as HTML tags
   function highlight(text, q) {
     const re = new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-    return text.replace(re, '<mark>$1</mark>');
+    return text.split(re).map((part, i) => i % 2 ? `<mark>${escHtml(part)}</mark>` : escHtml(part)).join('');
+  }
+
+  // escape a definition but still render its \( … \) maths with KaTeX
+  function richDef(def) {
+    return String(def).split(/(\\\(.+?\\\))/g).map((part, i) => i % 2 ? renderInlineLatex(part) : escHtml(part)).join('');
   }
 
   // ── GLOSSARY FILTER BUTTONS ──────────────────
@@ -192,7 +198,7 @@
         document.querySelectorAll('.term-item').forEach(item => {
           item.classList.remove('hidden', 'match');
           const n = item.querySelector('.term-name');
-          if (n) n.innerHTML = n.textContent;
+          if (n) n.innerHTML = escHtml(n.textContent);
         });
       });
     });
@@ -237,9 +243,9 @@
         </div>
         <div class="glossary-grid">
           ${topic.terms.map(([name, def]) => `
-            <div class="term-item" data-name="${name.toLowerCase()}" data-def="${def.toLowerCase()}">
-              <div class="term-name" style="color:${color}">${name}</div>
-              <div class="term-def">${renderInlineLatex(def)}</div>
+            <div class="term-item" data-name="${escHtml(name.toLowerCase())}" data-def="${escHtml(def.toLowerCase())}">
+              <div class="term-name" style="color:${color}">${escHtml(name)}</div>
+              <div class="term-def">${richDef(def)}</div>
             </div>`).join('')}
         </div>`;
       container.appendChild(sec);
