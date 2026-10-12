@@ -11,6 +11,9 @@
    2. Expandable glossary entries. Clicking an entry in the glossary
       (e.g. a search result) expands it to list every place the term
       appears; each one jumps straight to that page and highlights it.
+   3. Highlight anything. Selecting text that isn't a glossary term shows
+      related glossary entries plus a Wikipedia summary (biased by
+      SITE_CONFIG.wikiHint) or, for a single everyday word, Wiktionary.
 
    Optional per-site comparisons, shown in both views — define in
    glossary-data.js alongside glossaryData:
@@ -375,7 +378,7 @@
     clearTimeout(showTimer); clearTimeout(hideTimer);
     if (!card.isConnected) document.body.appendChild(card);
     const same = current && current.entry === e;
-    current = { entry: e, source, anchor };
+    current = { entry: e, source, anchor, rect };
     if (!same || !card.classList.contains('open')) card.innerHTML = cardHTML(e);
     card.classList.toggle('wide', e.comparisons.length > 0);
     place(rect);
@@ -421,7 +424,18 @@
 
   document.addEventListener('click', ev => {
     const act = ev.target.closest('.tp-card [data-act]');
-    if (act && current) { if (act.dataset.act === 'glossary') openInGlossary(current.entry); return; }
+    if (act && current) {
+      if (act.dataset.act === 'glossary') openInGlossary(current.entry);
+      if (act.dataset.act === 'search') searchGlossary(current.query);
+      return;
+    }
+    const rel = ev.target.closest('.tp-card [data-entry]');
+    if (rel && current) {   // related glossary term: show its card in the same spot
+      const rect = current.rect || card.getBoundingClientRect();
+      openCard(entries[+rel.dataset.entry], rect, 'select', null);
+      current.rect = rect;
+      return;
+    }
     if (ev.target.closest('.tp-card')) return;
     const t = ev.target.closest('.gl-term');
     if (t) {
@@ -443,6 +457,186 @@
   window.addEventListener('resize', hideCard);
   window.addEventListener('popstate', hideCard);
 
+  // ── LOOKUP FOR ANY OTHER SELECTION ───────────
+  // Anything that isn't a glossary term: related glossary entries, plus a
+  // Wikipedia summary (searched with the module's subject as a hint) or,
+  // for a single everyday word, a Wiktionary definition.
+  const STOP = new Set('a an and are as at be by for from has have in into is it its of on or that the their this to was were which with not but can will than then also itself themselves very more most such these those there here what when where how why'.split(' '));
+  const sigWords = q => norm(q).split(/[^\p{L}\p{N}]+/u).filter(w => w.length >= 3 && !STOP.has(w));
+  const stem = w => { const b = forms(w).sort((x, y) => x.length - y.length)[0]; return b.slice(0, Math.max(4, Math.min(6, b.length))); };
+  const lookupCache = new Map();
+
+  function relatedEntries(q) {
+    const words = sigWords(q);
+    if (!words.length) return [];
+    const res = words.map(w => new RegExp(`(?<![\\p{L}])${reEsc(stem(w))}`, 'iu'));
+    const ranked = entries.filter(e => !e.synthetic).map(e => {
+      const nameHits = res.filter(r => r.test(e.name)).length;
+      const defHits = res.filter(r => r.test(e.def || '')).length;
+      return { e, nameHits, score: nameHits * 3 + defHits };
+    }).filter(x => x.score >= Math.max(1, words.length))   // every word must show up somewhere
+      .sort((a, b) => b.score - a.score || a.e.name.length - b.e.name.length)
+      .slice(0, 4);
+    const list = ranked.map(x => x.e);
+    list.byName = ranked.filter(x => x.nameHits > 0).map(x => x.e);
+    list.strong = ranked.length > 0 && ranked[0].nameHits === words.length;   // a glossary name matches: show it first
+    return list;
+  }
+
+  async function getJSON(url) {
+    const r = await fetch(url, { headers: { 'Api-User-Agent': 'MatSciEng study site (ayquresh23.github.io)' } });
+    if (!r.ok) throw new Error(r.status);
+    return r.json();
+  }
+
+  // the word and its simple base forms: yielding → yield, densities → density
+  function forms(q) {
+    const n = norm(q), out = new Set([n]);
+    [[/ies$/, 'y'], [/es$/, ''], [/s$/, ''], [/ing$/, ''], [/ing$/, 'e'], [/ed$/, ''], [/ed$/, 'e'], [/ly$/, ''], [/ically$/, 'ic'], [/al$/, '']]
+      .forEach(([re, to]) => { const f = n.replace(re, to); if (re.test(n) && n.length > 5 && f.length >= 4) out.add(f); });
+    return [...out];
+  }
+
+  async function wikiFor(q) {
+    if (!sigWords(q).length) return null;
+    const fs = forms(q);
+    const baseOf = t => norm(t).replace(/\s*\(.*\)$/, '');
+    const search = async term => {
+      const j = await getJSON(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(term)}&srlimit=8&srprop=&format=json&origin=*`);
+      return (j.query && j.query.search || []).map(r => r.title);
+    };
+    const summary = async title => {
+      try {
+        const sm = await getJSON(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.replace(/ /g, '_'))}`);
+        return sm.type === 'standard' && sm.extract ? sm : null;
+      } catch (e) { return null; }
+    };
+    const exactIn = titles => titles.find(t => fs.includes(baseOf(t)));
+    // 1. a subject-specific article titled with the word: "Slip (materials science)"
+    // 2. the article with exactly that title (follows redirects: isotropic → Isotropy)
+    // both are requested at once; 1 wins when it exists
+    const hinted = CFG.wikiHint ? search(`${q} ${CFG.wikiHint}`).then(ts => exactIn(ts)).then(t => t ? summary(t) : null).catch(() => null) : Promise.resolve(null);
+    const direct = Promise.all(fs.map(f => summary(f.replace(/^./, c => c.toUpperCase()))));
+    let sm = await hinted;
+    if (!sm) sm = (await direct).find(Boolean) || null;
+    // 3. a plain search, still requiring the title to be the word itself
+    if (!sm) { const t = exactIn(await search(q)); if (t) sm = await summary(t); }
+    if (!sm) return null;
+    // an exact-title hit can still be the wrong kind of thing ("occurs" → OCCUR, an organisation)
+    const acronym = /^[A-Z0-9]{2,}$/.test(sm.title) && !/^[A-Z0-9]{2,}$/.test(q.trim());
+    const offTopic = /\b(band|album|song|single|film|television|tv series|novel|book|company|organi[sz]ation|video game|magazine|newspaper|record label|rapper|singer|musician|actor|footballer|politician|surname|given name|village|town|city|municipality|river|brand|software|website|podcast|play)\b/i.test(sm.description || '');
+    if (acronym || offTopic) return null;
+    return { source: 'Wikipedia', title: sm.title, desc: sm.description || '', text: sm.extract,
+      url: sm.content_urls && sm.content_urls.desktop && sm.content_urls.desktop.page };
+  }
+
+  async function wiktionaryFor(word, depth) {
+    const j = await getJSON(`https://en.wiktionary.org/api/rest_v1/page/definition/${encodeURIComponent(word.toLowerCase())}`);
+    const senses = (j.en || []).flatMap(p => (p.definitions || []).map(d => ({ pos: p.partOfSpeech, d: d.definition })))
+      .map(x => ({ pos: x.pos, d: (new DOMParser().parseFromString(x.d || '', 'text/html').body.textContent || '').trim() }))
+      .filter(x => x.d).slice(0, 3);
+    if (!senses.length) return null;
+    // "occurs" → "third-person singular … of occur": show the base word instead
+    const base = senses[0].d.match(/^(?:plural|(?:third-person|present|past|simple past|comparative|superlative)[\w\s-]*?) of ([a-z-]+)\.?$/i);
+    if (base && !depth && base[1].toLowerCase() !== word.toLowerCase()) {
+      const b = await wiktionaryFor(base[1], 1);
+      if (b) return b;
+    }
+    return { source: 'Wiktionary', title: word, desc: senses[0].pos.toLowerCase(), senses,
+      url: `https://en.wiktionary.org/wiki/${encodeURIComponent(word.toLowerCase())}` };
+  }
+
+  function lookup(q) {
+    const key = norm(q);
+    if (!lookupCache.has(key)) {
+      lookupCache.set(key, (async () => {
+        const single = sigWords(q).length === 1 && !/\s/.test(q.trim());
+        // dictionary lookup starts alongside Wikipedia so a miss doesn't cost a second round trip
+        const dict = single ? (async () => {
+          for (const f of forms(q.trim())) {
+            try { const d = await wiktionaryFor(f); if (d) return d; } catch (e) { /* no entry for this form */ }
+          }
+          return null;
+        })() : Promise.resolve(null);
+        try { const w = await wikiFor(q); if (w) return w; } catch (e) { /* offline or blocked: fall through */ }
+        return dict;
+      })());
+    }
+    return lookupCache.get(key);
+  }
+
+  function clip(t, n) { return t.length > n ? t.slice(0, t.lastIndexOf(' ', n)) + '…' : t; }
+
+  function externalHTML(r) {
+    if (!r) return '';
+    const body = r.senses
+      ? `<ol class="tp-senses">${r.senses.map(x => `<li><i>${esc(x.pos.toLowerCase())}</i> ${esc(clip(x.d, 160))}</li>`).join('')}</ol>`
+      : `<div class="tp-def">${esc(clip(r.text, 420))}</div>`;
+    return `<div class="tp-ext">
+      <div class="tp-title">${esc(r.title)}</div>
+      ${r.desc ? `<div class="tp-desc">${esc(r.desc)}</div>` : ''}
+      ${body}
+    </div>`;
+  }
+
+  function relatedHTML(list) {
+    if (!list.length) return '';
+    return `<div class="tp-related">
+      <div class="tp-rel-label">In this module's glossary</div>
+      ${list.map(e => `<button type="button" class="tp-rel" data-entry="${e.id}">
+        <span class="tp-rel-name" style="color:${e.color}">${esc(e.name)}</span>
+        <span class="tp-rel-def">${richText(e.def || '')}</span>
+      </button>`).join('')}
+    </div>`;
+  }
+
+  function queryCardHTML(q, related, result, state) {
+    const ext = state === 'loading'
+      ? '<div class="tp-loading"><span></span><span></span><span></span></div>'
+      : externalHTML(result);
+    if (state === 'done' && result) {   // with a real definition, only keep glossary terms whose name matches
+      const strong = related.strong; related = related.byName || []; related.strong = strong;
+    }
+    const none = state === 'done' && !result && !related.length;
+    const src = result ? `<a href="${esc(result.url)}" target="_blank" rel="noopener">Read on ${result.source} ↗</a>` : '<span></span>';
+    return `<div class="tp-arrow"></div>
+      <div class="tp-body">
+        <div class="tp-topic">${result ? esc(result.source) : 'Highlighted'} · “${esc(clip(q, 40))}”</div>
+        ${none ? `<div class="tp-def">No definition found for “${esc(q)}”.</div>` : ''}
+        ${related.strong ? relatedHTML(related) + ext : ext + relatedHTML(related)}
+      </div>
+      <div class="tp-foot">
+        ${src}
+        ${document.getElementById('glossary') ? '<button type="button" data-act="search">Search glossary</button>' : '<span></span>'}
+      </div>`;
+  }
+
+  function openQueryCard(q, rect) {
+    clearTimeout(showTimer); clearTimeout(hideTimer);
+    if (!card.isConnected) document.body.appendChild(card);
+    const related = relatedEntries(q);
+    const token = {};
+    current = { entry: null, query: q, source: 'select', anchor: null, token, rect };
+    card.classList.remove('wide');
+    card.innerHTML = queryCardHTML(q, related, null, 'loading');
+    place(rect);
+    requestAnimationFrame(() => card.classList.add('open'));
+    const timeout = new Promise(res => setTimeout(() => res(null), 6000));   // never leave the card spinning
+    Promise.race([lookup(q), timeout]).then(result => {
+      if (!current || current.token !== token) return;   // card moved on
+      card.innerHTML = queryCardHTML(q, related, result, 'done');
+      place(rect);
+    });
+  }
+
+  function searchGlossary(q) {
+    hideCard();
+    showSection('glossary');
+    if (window.exitFlashcards && document.getElementById('fc-session')) exitFlashcards();
+    const input = document.getElementById('glossary-search-input');
+    if (input) { input.value = q; input.dispatchEvent(new Event('input')); input.focus(); }
+  }
+
   // ── SELECTION ("highlight a term") ───────────
   function checkSelection() {
     const sel = window.getSelection();
@@ -454,16 +648,22 @@
     const frag = range.cloneContents();
     frag.querySelectorAll('.katex-mathml').forEach(n => n.remove());
     const text = frag.textContent.replace(/\u200b/g, '').trim();
-    if (!text || text.length > 60) return;
-    const e = findEntry(text);
-    if (!e) return;
+    if (!text || text.length > 80 || text.split(/\s+/).length > 8 || !/\p{L}/u.test(text)) return;   // sentences are being copied, not looked up
     const rects = range.getClientRects();
-    openCard(e, rects.length ? rects[0] : range.getBoundingClientRect(), 'select', null);
+    const rect = rects.length ? rects[0] : range.getBoundingClientRect();
+    const e = findEntry(text);
+    if (e) openCard(e, rect, 'select', null);
+    else if (sigWords(text).length) openQueryCard(text.replace(/\s+/g, ' '), rect);
   }
   document.addEventListener('mouseup', ev => { if (!ev.target.closest('.tp-card')) setTimeout(checkSelection, 0); });
   document.addEventListener('keyup', ev => { if (ev.shiftKey) checkSelection(); });
   document.addEventListener('touchend', () => setTimeout(checkSelection, 400));
+  // pressing a button or link in the card clears the selection; that mustn't close the card
+  let pressingCard = false;
+  card.addEventListener('pointerdown', () => { pressingCard = true; setTimeout(() => { pressingCard = false; }, 600); });
+  card.addEventListener('mousedown', ev => { if (ev.target.closest('button')) ev.preventDefault(); });
   document.addEventListener('selectionchange', () => {
+    if (pressingCard) return;
     if (current && current.source === 'select' && window.getSelection().isCollapsed) hideCard();
   });
 
