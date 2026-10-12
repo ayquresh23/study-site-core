@@ -29,7 +29,7 @@
   const CFG = window.SITE_CONFIG || {};
   const CONTENT_SEL = '.section:not(#home):not(#glossary)';
   const LINK_SKIP = 'h1,h2,h3,h4,th,a,button,input,textarea,select,label,code,pre,svg,script,style,mark,.katex,.gl-term,' +
-    '.formula-eq,.formula-var-symbol,.concept-box-title,.toc,.topic-nav,.topic-num,.sub-foot,.section-accent,.tp-card';
+    '.formula-eq,.formula-name,.formula-var-symbol,.concept-box-title,.toc,.topic-nav,.topic-num,.sub-foot,.section-accent,.tp-card';
   const MENTION_SKIP = 'script,style,svg,button,.katex,.toc,.topic-nav,.sub-foot,.section-accent,.tp-card';
   const MENTION_SHOW = 6, MENTION_MAX = 30;
   const HOVER_DELAY = 450, HIDE_DELAY = 260;
@@ -67,7 +67,7 @@
       }).join('');
     }).join('');
   }
-  const wrapRe = alts => new RegExp(`(?<![\\p{L}\\p{N}-])(${alts})(?:e?s)?(?![\\p{L}\\p{N}])`, 'gu');
+  const wrapRe = alts => new RegExp(`(?<![\\p{L}\\p{N}-])(${alts})(?:e?s)?(?![\\p{L}\\p{N}-])`, 'gu');
 
   function topicTag(key, name) {
     const m = name.match(/^(Topics?|Units?|Weeks?|Lectures?) (\d+)(?: (?:and|&) (\d+))?/);

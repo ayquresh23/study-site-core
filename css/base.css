@@ -392,8 +392,8 @@ body.revise-mode .subpager,body.revise-mode .layout-fab{display:none}
 @media print{.subpager,.sub-foot,.layout-fab{display:none}.section.paged .subpage{display:block}}
 
 /* ── TERM PREVIEWS (terms.js) ────────────── */
-.gl-term{text-decoration:underline dotted;text-decoration-color:var(--dim);text-decoration-thickness:1px;text-underline-offset:3px;cursor:help;border-radius:2px;transition:text-decoration-color .15s,background .15s}
-.gl-term:hover,.gl-term:focus-visible{text-decoration-color:var(--accent);outline:none}
+.gl-term{text-decoration:underline dotted;text-decoration-color:var(--muted);text-decoration-color:color-mix(in srgb,var(--accent) 70%,transparent);text-decoration-thickness:2px;text-underline-offset:4px;text-decoration-skip-ink:none;cursor:help;border-radius:2px;transition:text-decoration-color .15s,background .15s,color .15s}
+.gl-term:hover,.gl-term:focus-visible{text-decoration-color:var(--accent);text-decoration-style:solid;outline:none}
 .gl-term:focus-visible{background:var(--accent-soft)}
 .tp-card{position:absolute;top:0;left:0;z-index:950;width:360px;max-width:calc(100vw - 16px);background:var(--bg-elev);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 14px 44px rgba(0,0,0,0.6);opacity:0;visibility:hidden;transform:translateY(4px);transition:opacity .16s ease,transform .16s ease,visibility 0s linear .16s;text-align:left;line-height:1.55}
 .tp-card.wide{width:460px}
